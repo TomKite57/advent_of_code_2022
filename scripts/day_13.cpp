@@ -4,7 +4,7 @@
 #include <sstream>
 #include <vector>
 #include <string>
-
+#include <algorithm>
 
 std::vector<std::pair<std::string, std::string>> read_file(const std::string &fname)
 {
@@ -31,71 +31,113 @@ std::vector<std::pair<std::string, std::string>> read_file(const std::string &fn
     return rval;
 }
 
-class packet_base;
-class packet_bit;
-class packet_composite;
-
-class packet_base
-{
-public:
-    packet_base() = default;
-    ~packet_base() = default;
-    packet_base(const packet_base&) = default;
-    
-    virtual void add_packet(packet_base*) = 0;
-    virtual void show() = 0;
-};
-
-class packet_bit: public packet_base
+class packet_composite
 {
 private:
-    int _bit;
+    std::vector<packet_composite> _bits;
+    int _val = -1;
 
-public:
-    packet_bit(int bit): _bit{bit} {}
-    ~packet_bit() = default;
-    packet_bit(const packet_bit&) = default;
-
-    void add_packet(packet_base*) { throw("Can't cadd packet to single bit"); }
-    void show() { std::cout << _bit; }
-};
-
-class packet_composite: public packet_base
-{
-private:
-    std::vector<packet_base*> _bits;
+    bool is_composite() const { return _val==-1; }
+    int get_val() const { if (is_composite()){ throw("Called get_val of composite");} return _val; }
+    size_t get_range() const { if (!is_composite()){ throw("Called get_range of non-composite");} return _bits.size(); }
+    packet_composite get_packet(size_t i) const { if (!is_composite()){ throw("Called get_packet of non-composite");} return _bits.at(i); }
 
 public:
     packet_composite() = default;
-    ~packet_composite(){ for (auto& bit : _bits) delete bit; };
+    packet_composite(int val): _val{val} {}
+    ~packet_composite() = default;
     packet_composite(const packet_composite&) = default;
 
-    void add_packet(packet_base* pack){ _bits.push_back(pack); }
-    void show()
+    void add_packet(packet_composite pack){ _bits.push_back(pack); }
+    void show() const
     {
+        if (!is_composite())
+        {
+            std::cout << get_val();
+            return;
+        }
+        
         std::cout << "[";
         for (auto& bit : _bits)
         {
-            bit->show();
+            bit.show();
             if (&bit != &_bits.back()) std::cout << ",";
         }
         std::cout << "]";
     }
+
+    bool operator!=(const packet_composite& other) const
+    {
+        return !operator==(other);
+    }
+
+    bool operator==(const packet_composite& other) const
+    {
+        if (!is_composite() && !other.is_composite())
+            return get_val() == other.get_val();
+        if (is_composite() && !other.is_composite())
+            return false;
+        if (!is_composite() && other.is_composite())
+            return false;
+        // Both composite
+        if (get_range() != other.get_range())
+            return false;
+
+        for (size_t i=0; i<get_range(); ++i)
+            if (get_packet(i) != other.get_packet(i))
+                return false;
+        return true;
+    }
+
+    bool operator<(const packet_composite& other) const
+    {
+        if (!is_composite() && !other.is_composite())
+            return get_val() < other.get_val();
+
+        if (is_composite() && !other.is_composite())
+        {
+            packet_composite comp_other{};
+            comp_other.add_packet(packet_composite{other.get_val()});
+            return operator<(comp_other);
+        }
+        if (!is_composite() && other.is_composite())
+        {
+            packet_composite comp_self{};
+            comp_self.add_packet(packet_composite{get_val()});
+            return comp_self<other;
+        }
+        // Both composite
+        for (size_t i=0; i<std::min(get_range(), other.get_range()); ++i)
+        {
+            if (get_packet(i) != other.get_packet(i))
+                return get_packet(i) < other.get_packet(i);
+        }
+        // Must be the same
+        return get_range() < other.get_range();
+    }
+
+    bool operator>(const packet_composite& other) const
+    {
+        if (operator==(other))
+            return false;
+        
+        return !operator<(other);
+    }
+
+    bool operator>=(const packet_composite& other) const { return operator==(other) || operator>(other); }
+    bool operator<=(const packet_composite& other) const { return operator==(other) || operator<(other); }
 };
 
-packet_base* packet_builder(std::stringstream& ss)
+packet_composite packet_builder(std::stringstream& ss)
 {
-    packet_base* rval;
+    packet_composite rval;
     char ch = (char)ss.peek();
 
     if (ch == '[')
     {
-        rval = new packet_composite();
         ss >> ch;
         while (ss.peek() != (int)']')
-        {
-            rval->add_packet(packet_builder(ss));
-        }
+            rval.add_packet(packet_builder(ss));
         // Waste the ']'
         ss >> ch;
     }
@@ -106,8 +148,7 @@ packet_base* packet_builder(std::stringstream& ss)
         while (ss.peek() != (int)',' && ss.peek() != (int)']')
             substr.push_back((char)ss.get());
         num = std::stoi(substr);
-        rval = new packet_composite();
-        rval->add_packet(new packet_bit(num));
+        rval = packet_composite(num);
     }
 
     if (ss.peek() == (int)',')
@@ -115,31 +156,51 @@ packet_base* packet_builder(std::stringstream& ss)
     return rval;
 }
 
-packet_base* packet_builder(std::string& str){ std::stringstream ss{str}; return packet_builder(ss); }
+packet_composite packet_builder(std::string& str){ std::stringstream ss{str}; return packet_builder(ss); }
+
+int part_1(const std::vector<packet_composite>& packets)
+{
+    int count = 0;
+    for (size_t i=0; i<packets.size(); i+=2)
+    {
+        if (packets[i]<packets[i+1])
+            count += (i+2)/2;
+    }
+    return count;
+}
+
+int part_2(const std::vector<packet_composite>& packets)
+{
+    std::string str1 = "[[2]]";
+    std::string str2 = "[[6]]";
+    packet_composite pck1 = packet_builder(str1);
+    packet_composite pck2 = packet_builder(str2);
+
+    int count1 = 1;
+    int count2 = 2;
+    for (const auto& pack : packets)
+    {
+        if (pack<pck1)
+            count1++;
+        if (pack<pck2)
+            count2++;
+    }
+
+    return count1*count2;
+}
 
 int main()
 {
     auto data = read_file("data/day_13.dat");
-    std::vector<std::pair<packet_base*, packet_base*>> packets;
+    std::vector<packet_composite> packets;
     for (auto& row : data)
     {
-        packets.push_back( { packet_builder(row.first), packet_builder(row.second) } );
+        packets.push_back(packet_builder(row.first));
+        packets.push_back(packet_builder(row.second));
     }
 
-    for (const auto& row : packets)
-    {
-        std::cout << "\n";
-        row.first->show();
-        std::cout << "\n";
-        row.second->show();
-        std::cout << "\n\n";
-    }
-
-    for (const auto& row : packets)
-    {
-        delete row.first;
-        delete row.second;
-    }
+    std::cout << "Part 1: " << part_1(packets) << "\n";
+    std::cout << "Part 2: " << part_2(packets) << "\n";
 
     return 0;
 }
