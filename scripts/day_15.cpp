@@ -47,92 +47,6 @@ std::vector<std::tuple<int, int, int, int>> read_file(const std::string& fname) 
 
     return coordinates;
 }
-
-std::set<coord> excluded_points(const coord& sensor, const coord& beacon)
-{
-    coord SE = {+1, +1};
-    coord SW = {-1, +1};
-    coord NW = {-1, -1};
-    coord NE = {+1, -1};
-    std::set<coord> excluded{{sensor}};
-    int y_dist = dist(sensor, beacon);
-
-    for (int dy=1; dy<=y_dist; ++dy)
-    {
-        coord pos = {sensor.first, sensor.second+dy};
-        excluded.insert(pos);
-        while (pos.second != sensor.second)
-        {
-            pos = pos + NE;
-            excluded.insert(pos);
-        }
-        while (pos.first != sensor.first)
-        {
-            pos = pos + NW;
-            excluded.insert(pos);
-        }
-        while (pos.second != sensor.second)
-        {
-            pos = pos + SW;
-            excluded.insert(pos);
-        }
-        while (pos.first != sensor.first)
-        {
-            pos = pos + SE;
-            excluded.insert(pos);
-        }
-    }
-
-    excluded.extract(beacon);
-    return excluded;
-}
-
-std::set<coord> excluded_points(const std::vector<std::tuple<int, int, int, int>>& data)
-{
-    std::set<coord> excluded;
-    for (const auto& row : data)
-    {
-        auto new_excluded = excluded_points({std::get<0>(row), std::get<1>(row)}, {std::get<2>(row), std::get<3>(row)});
-        for (const auto& elem : new_excluded){ excluded.insert(elem); }
-    }
-
-    return excluded;
-}
-
-int part_1_smart(const std::vector<std::tuple<int, int, int, int>>& data, int row_to_count)
-{
-    int xmin, xmax;
-    xmin = xmax = std::get<0>(data[0]);
-
-    for (const auto& row : data)
-    {
-        xmin = std::min(xmin, std::get<0>(row) - dist(row));
-        xmax = std::max(xmax, std::get<0>(row) + dist(row));
-    }
-
-    int count = 0;
-    for (int x=xmin; x<=xmax; ++x)
-    {
-        coord pos = {x, row_to_count};
-        bool excluded = false;
-        for (const auto& row : data)
-        {
-            if (pos == coord(std::get<2>(row), std::get<3>(row)))
-            {
-                excluded = false;
-                break;
-            }
-
-            if (dist(pos, {std::get<0>(row), std::get<1>(row)}) <= dist(row))
-                excluded=true;
-        }
-        if (excluded)
-            ++count;
-    }
-
-    return count;
-}
-
 class sensor_beacon_pair
 {
 private:
@@ -157,15 +71,8 @@ public:
         if (sensor_dist(pos) > total_distance)
             return 0;
 
-        while (sensor_dist(pos) < total_distance)
-            pos = {pos.first-1, pos.second};
-        range.first = pos.first;
-
-        pos = {sensor.first, y_row};
-        while (sensor_dist(pos) < total_distance)
-            pos = {pos.first+1, pos.second};
-        range.second = pos.first;
-
+        range = { sensor.first - total_distance + abs(y_row-sensor.second),
+                  sensor.first + total_distance - abs(y_row-sensor.second) };
         return 1;
     }
 };
@@ -177,7 +84,7 @@ int unite_ranges(std::pair<int,int>& a, std::pair<int,int>& b)
         return unite_ranges(b, a);
     
     // a is now always to the left
-    if (a.second < b.first)
+    if (a.second+1 < b.first)
         return 0;
 
     a.second = std::max(a.second, b.second);
@@ -195,7 +102,6 @@ int intersected_ranges(std::pair<int,int>& a, std::pair<int,int>& b)
     // a is now always to the left
     if (a.second < b.first)
     {
-        a.first = b.first = a.second = b.second = 0;
         return 0;
     }
 
@@ -206,7 +112,7 @@ int intersected_ranges(std::pair<int,int>& a, std::pair<int,int>& b)
     return 1;
 }
 
-int part_1_smarterer(const std::vector<sensor_beacon_pair>& pairs, int y_row)
+int part_1(const std::vector<sensor_beacon_pair>& pairs, int y_row)
 {
     std::vector<std::pair<int,int>> all_ranges;
     std::set<coord> beacons_on_line;
@@ -237,15 +143,15 @@ int part_1_smarterer(const std::vector<sensor_beacon_pair>& pairs, int y_row)
     return std::accumulate(all_ranges.begin(), all_ranges.end(), -beacons_on_line.size(), [](const int& c, const std::pair<int,int>& r){return c + r.second-r.first + 1;});
 }
 
-int part_2(const std::vector<sensor_beacon_pair>& pairs, int min, int max)
+std::string part_2(const std::vector<sensor_beacon_pair>& pairs, int min, int max)
 {
     for (int y_row=min; y_row<=max; ++y_row)
     {
-        std::pair<int,int> full_range = {min, max};
 
         std::vector<std::pair<int,int>> all_ranges;
         for (const auto& pair : pairs)
         {
+            std::pair<int,int> full_range = {min, max};
             std::pair<int,int> range{0, 0};
             if (!pair.excluded_range(y_row, range))
                 continue;
@@ -269,12 +175,28 @@ int part_2(const std::vector<sensor_beacon_pair>& pairs, int min, int max)
 
         if (all_ranges.size() > 1)
         {
-            int x = std::min(all_ranges[0].second, all_ranges[1].second)+1;
-            return 4000000*x + y_row;
+            //int x = std::min(all_ranges[0].second, all_ranges[1].second)+1;
+            int x = all_ranges[0].second+1;
+
+            std::string x_str, y_str;
+
+            y_str = std::to_string(y_row);
+            if (y_str.size() == 7)
+            {
+                x_str = std::to_string(4*x + y_row/1000000);
+                y_str.erase(0, 1);
+            }
+            else
+            {
+                x_str = std::to_string(4*x);
+                while (y_str.size()!= 6)
+                    y_str = "0" + y_str;
+            }
+            return x_str + y_str;
         }
     }
 
-    return -1;
+    return "-1";
 }
 
 int main()
@@ -285,12 +207,11 @@ int main()
     for (const auto& row : data)
         all_pairs.push_back(sensor_beacon_pair{row});
 
+    //std::cout << "Part 1: " << part_1(all_pairs, 10) << "\n";
+    //std::cout << "Part 2: " << part_2(all_pairs, 0, 20) << "\n";
 
-    //std::cout << "Part 1: " << part_1_smarterer(all_pairs, 2000000);
-    std::cout << "Part 1: " << part_1_smarterer(all_pairs, 10) << "\n";
-
-    std::cout << "Part 2: " << part_2(all_pairs, 0, 20) << "\n";
-
+    std::cout << "Part 1: " << part_1(all_pairs, 2000000) << "\n";
+    std::cout << "Part 2: " << part_2(all_pairs, 0, 4000000) << "\n";
 
     return 0;
 }
