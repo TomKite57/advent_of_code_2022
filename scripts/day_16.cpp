@@ -204,17 +204,18 @@ private:
     std::string pos{"AA"};
     int pressure{0};
     int time{0};
-    int time_limit{29};
+    int time_limit{30};
 
     void open_current_valve()
     {
+        increment_counter(1);
+        
         if (is_finished())
             return;
 
         if (open_valves.at(pos))
             throw("Valve already open.");
         open_valves.at(pos) = true;
-        increment_counter(1);
     }
     void move_to(const std::string& new_pos)
     {
