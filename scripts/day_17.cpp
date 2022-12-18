@@ -344,24 +344,44 @@ int main()
         cave.add_rock();
     std::cout << "Part 1: " << cave.get_rock_formation().get_ymax()+1 << "\n";
 
-    int memory = -1;
-    for (int i=2022; i<1'000'000; ++i)
+    int height_a = -1;
+    int rocks_a = -1;
+    int height_b = -1;
+    int rocks_b = -1;
+    while (true)
     {
         cave.add_rock();
         if (cave.new_floor())
         {
-            std::cout << cave.get_rock_formation().get_ymax()+1 - memory << "\n";
-            memory = cave.get_rock_formation().get_ymax()+1;
-            std::cout << i << " | " << cave.total_rocks()%5 << " | " << cave.get_next_jet_ind()%data.size() << "\n";
+            if (height_a == -1)
+            {
+                height_a = cave.get_rock_formation().get_ymax()+1;
+                rocks_a = cave.total_rocks();
+            }
+            else
+            {
+                height_b = cave.get_rock_formation().get_ymax()+1;
+                rocks_b = cave.total_rocks();
+                break;
+            }
         }
     }
+    int period = rocks_b - rocks_a;
+    int delta_height = height_b - height_a;
+
+    long long int total_cycles = (1'000'000'000'000 - cave.total_rocks())/period;
+    long long int remainder = (1'000'000'000'000 - cave.total_rocks())%period;
+    for (long long int i=0; i<remainder; ++i)
+        cave.add_rock();
+    
+    std::cout << "Part 2: " << cave.get_rock_formation().get_ymax()+1 + delta_height*total_cycles << "\n";
 
     return 0;
 
+    /*
     std::vector<long long int> height_record;
     std::vector<long long int> increments;
     long long int min_period = 5*data.size();
-
     std::vector<long long int> seq;
     while (true)
     {
@@ -397,5 +417,6 @@ int main()
     //    cave.add_rock();
     //    //std::cout << cave << "\n\n";
     //}
+    */
 
 }
