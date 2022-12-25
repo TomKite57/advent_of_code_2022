@@ -137,7 +137,7 @@ int min_path(const valve_graph& graph, const std::string& start, const std::stri
     // Initial setup
     std::vector<graph_explorer> explorers{};
     explorers.push_back(graph_explorer{graph, start, end});
-    int best_len = -1;
+    int best_len = graph.size();
     std::unordered_map<std::string, int> history;
     history.insert({explorers.back().get_hash_string(), explorers.back().get_len()});
 
@@ -150,7 +150,7 @@ int min_path(const valve_graph& graph, const std::string& start, const std::stri
         // Check if already finished
         if (current.is_finished())
         {
-            best_len = std::max(best_len, current.get_len());
+            best_len = std::min(best_len, current.get_len());
             continue;
         }
 
@@ -328,7 +328,7 @@ int part_1(const compressed_valve_graph& graph, const rate_table& flows)
     explorers.push_back(valve_path_explorer{graph, flows});
     int best_pressure = -1;
     std::unordered_map<std::string, std::pair<int,int>> history;
-    //history.insert({explorers.back().get_hash_string(), explorers.back().get_time_and_pressure()});
+    history.insert({explorers.back().get_hash_string(), explorers.back().get_time_and_pressure()});
 
     // Find max flow rate
     int max_flow_rate = 0;
@@ -344,7 +344,7 @@ int part_1(const compressed_valve_graph& graph, const rate_table& flows)
         valve_path_explorer current = std::move(*current_it);
         explorers.erase(current_it);
 
-        std::cout << best_pressure << " | " << current.get_pressure() << " | " << current.get_time() << " | " << current.get_hash_string() << "\n";
+        //std::cout << best_pressure << " | " << current.get_pressure() << " | " << current.get_time() << " | " << current.get_hash_string() << "\n";
 
         // Check if already finished
         if (current.is_finished())
@@ -354,8 +354,8 @@ int part_1(const compressed_valve_graph& graph, const rate_table& flows)
         }
 
         // Check if definitely worse than best pressure
-        //if (best_pressure != -1 && current.get_pressure() + max_flow_rate*current.get_time_remaining() <= best_pressure)
-        //    continue;
+        if (best_pressure != -1 && current.get_pressure() + max_flow_rate*current.get_time_remaining() <= best_pressure)
+            continue;
 
         // Find all possible steps
         auto new_explorers = current.take_step();
@@ -363,42 +363,42 @@ int part_1(const compressed_valve_graph& graph, const rate_table& flows)
         {
             bool to_keep = true;
             // If in new state always keep
-//            if (!is_in(exp.get_hash_string(), history))
-//                history.insert({exp.get_hash_string(), exp.get_time_and_pressure()});
-//            else
-//            {
-//                // Previous time in state
-//                auto old_time_pressure = history.at(exp.get_hash_string());
-//                int prev_time_remain = old_time_pressure.first;
-//                int prev_pressure = old_time_pressure.second;
-//
-//                // This state
-//                auto current_time_pressure = current.get_time_and_pressure();
-//                int current_time_remain = current_time_pressure.first;
-//                int current_pressure = current_time_pressure.second;
-//
-//                // Max improvement and default improvement compared to over state
-//                int max_improvement = max_flow_rate*(current_time_remain - prev_time_remain);
-//                int default_improvement = current.get_current_flow_rate()*(current_time_remain - prev_time_remain);
-//
-//                // Max improvement and default improvement to final moment
-//                int optimistic_projection = max_flow_rate*current_time_remain;
-//                int default_projection = current.get_current_flow_rate()*current_time_remain;
-//
-//                // Simply worse or equal in both metrics
-//                if (current_time_remain <= prev_time_remain && current_pressure <= prev_pressure)
-//                    to_keep = false;
-//                // Even optimistic progress would be worse
-//                else if (current_time_remain > prev_time_remain && current_pressure + max_improvement < prev_pressure)
-//                    to_keep = false;
-//                // Even optimistic projection would fail
-//                else if (best_pressure != -1 && current_pressure + optimistic_projection <= best_pressure)
-//                    to_keep = false;
-//            }
+            if (!is_in(exp.get_hash_string(), history))
+                history.insert({exp.get_hash_string(), exp.get_time_and_pressure()});
+            else
+            {
+                // Previous time in state
+                auto old_time_pressure = history.at(exp.get_hash_string());
+                int prev_time_remain = old_time_pressure.first;
+                int prev_pressure = old_time_pressure.second;
+
+                // This state
+                auto current_time_pressure = current.get_time_and_pressure();
+                int current_time_remain = current_time_pressure.first;
+                int current_pressure = current_time_pressure.second;
+
+                // Max improvement and default improvement compared to over state
+                int max_improvement = max_flow_rate*(current_time_remain - prev_time_remain);
+                int default_improvement = current.get_current_flow_rate()*(current_time_remain - prev_time_remain);
+
+                // Max improvement and default improvement to final moment
+                int optimistic_projection = max_flow_rate*current_time_remain;
+                int default_projection = current.get_current_flow_rate()*current_time_remain;
+
+                // Simply worse or equal in both metrics
+                if (current_time_remain <= prev_time_remain && current_pressure <= prev_pressure)
+                    to_keep = false;
+                // Even optimistic progress would be worse
+                else if (current_time_remain > prev_time_remain && current_pressure + max_improvement < prev_pressure)
+                    to_keep = false;
+                // Even optimistic projection would fail
+                else if (best_pressure != -1 && current_pressure + optimistic_projection <= best_pressure)
+                    to_keep = false;
+            }
             
             if (to_keep)
             {
-                //history[exp.get_hash_string()] = exp.get_time_and_pressure();
+                history[exp.get_hash_string()] = exp.get_time_and_pressure();
                 explorers.push_back(exp);
             }
         }
@@ -406,6 +406,192 @@ int part_1(const compressed_valve_graph& graph, const rate_table& flows)
 
     return best_pressure;
 }
+
+class pair_path_explorer
+{
+private:
+    const compressed_valve_graph& path_lengths;
+    const rate_table& flows;
+    std::map<std::string, bool> open_valves;
+
+    std::string my_pos{"AA"};
+    int my_time{0};
+    std::string ele_pos{"AA"};
+    int ele_time{0};
+    
+    int pressure{0};
+    int time_limit{26};
+
+    void open_valve(std::string pos, int& time)
+    {
+        increment_time(time, 1);
+        
+        if (open_valves.at(pos))
+            throw("Valve already open.");
+
+        if (time!=time_limit)
+        {
+            open_valves.at(pos) = true;
+            pressure += flows.at(pos)*(time_limit-time);
+        }
+    }
+    void move_to(std::string& pos, const std::string& new_pos, int& time)
+    {            
+        if (!is_in({pos, new_pos}, path_lengths))
+            throw("No open paths to destination");
+        
+        increment_time(time, path_lengths.at({pos, new_pos}));
+        pos = new_pos;        
+    }
+    void increment_time(int& time, int n)
+    {
+        n = std::min(n, time_limit-time);
+        time+=n;
+    }
+
+public:
+    pair_path_explorer(const compressed_valve_graph& gg, const rate_table& ff):
+        path_lengths{gg}, flows{ff}
+        {
+            for (const auto& row: flows)
+                if (row.second > 0)
+                    open_valves.insert({row.first, false});
+        }
+    ~pair_path_explorer() = default;
+    pair_path_explorer(const pair_path_explorer&) = default;
+    pair_path_explorer& operator=(const pair_path_explorer& other)
+    {
+        open_valves = other.open_valves;
+        
+        my_pos = other.my_pos;
+        ele_pos = other.ele_pos;
+        my_time = other.my_time;
+        ele_time = other.ele_time;
+        
+        pressure = other.pressure;
+
+        return *this;
+    };
+
+    int get_pressure() const { return pressure; }
+    const rate_table& get_rate_table() const { return flows; }
+    const std::map<std::string, bool>& get_valve_states() const { return open_valves; }
+    int optimistic_improvement() const
+    {
+        int max_flow = 0;
+        for (const auto v : open_valves)
+            if (!v.second)
+                max_flow += flows.at(v.first);
+
+        int max_time = 0;
+        max_time = std::max(max_time, time_limit-my_time-2);
+        max_time = std::max(max_time, time_limit-ele_time-2);
+
+        return max_flow*max_time;
+    }
+
+    bool is_finished() const { return (my_time==time_limit && ele_time==time_limit); }
+
+    std::vector<pair_path_explorer> take_step()
+    {
+        // Move me
+        std::vector<std::string> my_locs{my_pos};
+        for (const auto& row : path_lengths)
+            if (row.first.first == my_pos && path_lengths.at({my_pos, row.first.second})<=time_limit-my_time && is_in(row.first.second, open_valves) && !open_valves.at(row.first.second))
+                my_locs.push_back(row.first.second);
+
+        if (my_locs.size()==1)
+            increment_time(my_time, time_limit);
+        
+        // Move elephant
+        std::vector<std::string> ele_locs{ele_pos};
+        for (const auto& row : path_lengths)
+            if (row.first.first == ele_pos && path_lengths.at({ele_pos, row.first.second})<=time_limit-ele_time && is_in(row.first.second, open_valves) && !open_valves.at(row.first.second))
+                ele_locs.push_back(row.first.second);
+
+        if (ele_locs.size()==1)
+            increment_time(ele_time, time_limit);
+        
+        if (my_locs.size()==1 && ele_locs.size()==1)
+            return {*this};
+        
+        std::vector<pair_path_explorer> out_clones;
+
+        for (const auto& my_new_pos : my_locs)
+        {
+            for (const auto& ele_new_pos : ele_locs)
+                {
+                    if (my_new_pos==my_pos && ele_new_pos==ele_pos)
+                        continue;
+                    if (my_new_pos==ele_new_pos)
+                        continue;
+                    
+                    out_clones.push_back(pair_path_explorer(*this));
+                    pair_path_explorer& clone = out_clones.back();
+
+                    if (my_pos!=my_new_pos)
+                    {
+                        clone.move_to(clone.my_pos, my_new_pos, clone.my_time);
+                        clone.open_valve(clone.my_pos, clone.my_time);
+                    }
+
+                    if (ele_pos!=ele_new_pos)
+                    {
+                        clone.move_to(clone.ele_pos, ele_new_pos, clone.ele_time);
+                        clone.open_valve(clone.ele_pos, clone.ele_time);
+                    }
+                }
+        }
+
+        return out_clones;
+    }
+};
+
+int part_2(const compressed_valve_graph& graph, const rate_table& flows)
+{
+    // Initial setup
+    std::vector<pair_path_explorer> explorers{};
+    explorers.push_back(pair_path_explorer{graph, flows});
+    int best_pressure = -1;
+
+    // Find max flow rate
+    int max_flow_rate = 0;
+    for (const auto& v_f : flows)
+        max_flow_rate += v_f.second;
+
+    // Allow all explorers to do their thing
+    while (!explorers.empty())
+    {
+        // Just most likely to succeed
+        auto current_it = std::max_element(explorers.begin(), explorers.end(),
+                                           [](const pair_path_explorer& pe_a, const pair_path_explorer& pe_b){return pe_a.get_pressure()<pe_b.get_pressure();});
+        pair_path_explorer current = std::move(*current_it);
+        explorers.erase(current_it);
+
+        //pair_path_explorer current = explorers.back();
+        //explorers.pop_back();
+
+        // Check if already finished
+        if (current.is_finished())
+        {
+            if (current.get_pressure() > best_pressure)
+                std::cout << current.get_pressure() << "\n";
+            best_pressure = std::max(best_pressure, current.get_pressure());
+            continue;
+        }
+
+        if (current.get_pressure() + current.optimistic_improvement() <= best_pressure)
+            continue;
+
+        // Find all possible steps
+        auto new_explorers = current.take_step();
+        for (const auto& exp : new_explorers)
+            explorers.push_back(exp);
+    }
+
+    return best_pressure;
+}
+
 
 int main()
 {
@@ -418,7 +604,9 @@ int main()
     //for (const auto& row : compressed)
     //    std::cout << row.first.first << " ==> " << row.first.second << ": " << row.second << "\n";
 
-    std::cout << "Part 1: " << part_1(compressed, flows) << "\n";
+    //std::cout << "Part 1: " << part_1(compressed, flows) << "\n";
+    std::cout << "Part 2: " << part_2(compressed, flows) << "\n";
+    std::cout << "Part 2: " << 2298 << "(!)\n";
     
     return 0;
 }
